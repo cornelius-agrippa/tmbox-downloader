@@ -1,30 +1,37 @@
 import TmBoxParser
 import sys
+import urllib.parse as urlparse
 
-#############################################################
-# Execution Block
 if __name__ == '__main__':
 	if len(sys.argv) < 2:
 		print ("Missing argument. Usage: python", sys.argv[0], "https://tmbox.net/user/<username>")
-		#sys.exit()
+		sys.exit()
+
+	#parsed = urlparse.urlparse(sys.argv[1])
+	#queries = urlparse.parse_qs(parsed.query)
+
+	#if 'page' in queries:
+	#	currentPage = queries['page']
+	#else:
+	#	currentPage = 1
 
 	currentPage = 1
 
 	parser = TmBoxParser.Parser()
 
 	while True:
-		result = parser.parseSongList("https://tmbox.net/user/yoiyami_", currentPage)
+		result = parser.parseSongList(sys.argv[1], currentPage)
+		songList = parser.getSongList(result)
 
-		#numOfSongs = parser.getSongCount(result)
+		if not len(songList):
+			print ("No songs found in provided page. Terminating job.")
+			break
 
-		#if not numOfSongs:
-		#	print ("No songs found for provided user.")
-		#	break
-
-		parser.getSongList(result)
+		for songEntry in songList:
+			parser.downloadSong(songEntry)
 
 		if not len(parser.getNextPage(result)):
-			print ("Job is done")
+			print ("Job's done")
 			break
 
 		currentPage += 1

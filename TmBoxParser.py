@@ -1,6 +1,7 @@
-import urllib.request, codecs, threading, queue, math, sys
-#from PyQt5.QtWidgets import QApplication, QWidget
+import urllib.request, sys, os.path, re
+from urllib.error import URLError, HTTPError
 from bs4 import BeautifulSoup
+from Common import getValidFilename
 
 class Parser: 
 	#############################################################
@@ -10,17 +11,22 @@ class Parser:
 		'User-Agent': 'Mozilla/5.0 (Windows NT 6.3; Win64; x64; rv:45.0) Gecko/20100101 Firefox/45.0 Cyberfox/45.0.3'
 	}
 
-	baseUri = "https://tmbox.net"
-	downloadUri = "https://tmbox.net/dl/"
-	pageQuery = "?page="
+	URI = {
+		'base': "https://tmbox.net",
+		'download': "https://tmbox.net/dl/",
+		'pageQuery': "?page="
+	}
 
 	DOMcontainers = {
 		'SongCount': "div.l-left > div:nth-of-type(10)",
 		'SongListEntry': "div.sound-box",
-			'CoverLink': "div.sound-box__icon", # Not in use
 			'SongLink': "div.title > a",
+			'CoverLink': "div.sound-box__icon > img", # Not in use
 		'NextPageButton': "a[rel=\"next\"]"
 	}
+
+	DownloadDirectory = "downloaded"
+	DefaultExtension = ".mp3"
 
 	#############################################################
 	# HTTP Requests/Parsing
@@ -42,9 +48,8 @@ class Parser:
 		return BeautifulSoup(htmlDoc, 'html.parser')
 
 	# Parses profile/song list page
-	def parseSongList(self, pageUrl, pageNumber=False):
-		if pageNumber:
-			pageUrl = pageUrl + self.pageQuery + str(pageNumber)
+	def parseSongList(self, pageUrl, pageNumber):
+		pageUrl = pageUrl + self.URI['pageQuery'] + str(pageNumber)
 
 		soup = self.parsePage(pageUrl)
 
@@ -74,48 +79,51 @@ class Parser:
 	def getNextPage(self,soup):
 		return soup.select(self.DOMcontainers['NextPageButton'])
 
+	# Acquires songs published by the user
 	def getSongList(self, soup):
+		from urllib.parse import urlparse
+
 		songList = []
 
-		#for a in soup.find_all('a', {'class': 'sound-box'}):
 		for entry in soup.select(self.DOMcontainers['SongListEntry']):
 			element = entry.select_one(self.DOMcontainers['SongLink'])
+
 			title = element.string.strip('\n')
 			link = element['href']
 
-			print(title, link)
+			element = entry.select_one(self.DOMcontainers['CoverLink'])
+			cover = urlparse(element['src'])
+			cover = cover.scheme + "://" + cover.netloc + cover.path
 
-			#songList.append(baseUri + a['href'])
+			songList.append([title, link, cover])
 
-	def parsePlayerPage(self, pageUrl):
-		global MainWindow, UiMainWindow
-		soup = parsePage(pageUrl)
+		return songList
 
-		if not soup:
-			return False
+	#
+	def downloadSong(self, songEntry):
+		if not os.path.exists(self.DownloadDirectory):
+			os.makedirs(self.DownloadDirectory)
 
-		audioElem = soup.select('h1.title')
-		audioTitle = audioElem[0].string
-		
-		pageUrl = pageUrl.split('/')
+		fileName = getValidFilename(songEntry[0] + self.DefaultExtension)
+		dupe = 1
 
-		resource = urllib.request.urlopen(downloadPage + pageUrl[-1])
-		filename = audioTitle + '.mp3'
+		# Check for duplicate filename. If found, append a suffix
+		while os.path.exists(fileName):
+			fileName = getValidFilename(songEntry[0]+ "(" + str(dupe) + ")" + self.DefaultExtension)
+			dupe += 1
 
-		if resource.getcode() != 200:
-			print('Unable to acquire resource. Skipping...')
-			return False
+		songUrn = songEntry[1].split('/')
+		songUrl = self.URI['download'] + songUrn[-1]
 
-		print('Downloading:', filename.encode(sys.stdout.encoding, errors='replace'))
+		print('Downloading\n\tFile:', fileName, "\n\tSource:", songUrl)
 
-		with open(filename, 'wb') as f:
-			f.write(resource.read())
-
-	#def startParser(self):
-	#	musicPageArray = []
-
-	#	parseMusicList("http://tmbox.net/user/yoiyami_/sound", musicPageArray)
-
-	#	for musicPage in musicPageArray:
-	#		parseMusicPage(musicPage)
-
+		try:
+			with urllib.request.urlopen(songUrl) as response, open(os.path.join(self.DownloadDirectory, fileName), 'wb') as out_file:
+				data = response.read()
+				out_file.write(data)
+		except HTTPError as e:
+			print('\tERROR: Unable to fetch song. User may have disabled downloads for this song. Error code: ', e.code)
+		except URLError as e:
+			print('Reason: ', e.reason)
+		else:
+			print('\tDone')
