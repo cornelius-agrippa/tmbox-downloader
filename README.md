@@ -2,7 +2,7 @@
 
 #### What is it
 
-A web-crawler/downloader for tmbox.net. It allows you to bulk download every song published by a user.
+A tmbox web-crawler/downloader that allows you to bulk download every song published by a user on tmbox.net.
 
 #### Requirements
 
